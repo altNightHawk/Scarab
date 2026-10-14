@@ -1,0 +1,28 @@
+name: Test build (unsigned)
+
+# Unsigned Windows build for testing. Runs on pushes to claude/** branches and
+# on demand; the exe is attached to the run as a downloadable artifact.
+on:
+  push:
+    branches: ["claude/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test
+        run: cargo test --locked
+      - name: Build
+        run: cargo build --release --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scarab-windows-x64-test
+          path: target/release/scarab.exe
+          if-no-files-found: error
