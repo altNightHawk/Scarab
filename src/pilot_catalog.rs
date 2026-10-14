@@ -177,20 +177,39 @@ fn primary_asset_name(properties: &[Property], id_property: &str) -> Option<Stri
 }
 
 fn tags_by_name(properties: &[Property], name: &str) -> Vec<String> {
-    let mut tags = match find_property(properties, name) {
-        Some(Property::GameplayTagContainerProperty(property)) => {
-            property.value.iter().map(render_fname).collect()
-        }
-        Some(Property::ArrayProperty(property)) => property
-            .value
-            .iter()
-            .filter_map(string_from_property)
-            .collect(),
-        _ => Vec::new(),
-    };
+    let mut tags = Vec::new();
+    if let Some(property) = find_property(properties, name) {
+        collect_tags(property, &mut tags);
+    }
     tags.sort();
     tags.dedup();
     tags
+}
+
+/// The tag container is a struct property wrapping a `GameplayTagContainerProperty`
+/// of the same name, so look through structs and arrays for the tag names.
+fn collect_tags(property: &Property, tags: &mut Vec<String>) {
+    match property {
+        Property::GameplayTagContainerProperty(property) => {
+            tags.extend(property.value.iter().map(render_fname));
+        }
+        Property::StructProperty(property) => {
+            property
+                .value
+                .iter()
+                .for_each(|child| collect_tags(child, tags));
+        }
+        Property::ArrayProperty(property) => {
+            property
+                .value
+                .iter()
+                .for_each(|child| collect_tags(child, tags));
+        }
+        Property::NameProperty(_) | Property::StrProperty(_) => {
+            tags.extend(string_from_property(property));
+        }
+        _ => {}
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -280,5 +299,41 @@ mod tests {
             ]
         );
         assert_eq!(assets[0].key(), "Portrait:a");
+    }
+
+    #[test]
+    fn attributes_tags_are_found_inside_a_wrapping_struct() {
+        use unreal_asset::{
+            properties::{
+                gameplay_tag_container_property::GameplayTagContainerProperty,
+                struct_property::StructProperty,
+            },
+            types::fname::FName,
+            unversioned::ancestry::Ancestry,
+        };
+        let container = Property::GameplayTagContainerProperty(GameplayTagContainerProperty {
+            name: FName::new_dummy("Attributes".to_string(), 0),
+            ancestry: Ancestry::default(),
+            property_guid: None,
+            duplication_index: 0,
+            value: vec![
+                FName::new_dummy("PilotPersona.Use.Hero".to_string(), 0),
+                FName::new_dummy("DLC.DLC7".to_string(), 0),
+            ],
+        });
+        let wrapper = Property::StructProperty(StructProperty {
+            name: FName::new_dummy("Attributes".to_string(), 0),
+            ancestry: Ancestry::default(),
+            property_guid: None,
+            duplication_index: 0,
+            struct_type: None,
+            struct_guid: None,
+            value: vec![container],
+            serialize_none: true,
+        });
+        assert_eq!(
+            tags_by_name(&[wrapper], "Attributes"),
+            vec!["DLC.DLC7".to_string(), "PilotPersona.Use.Hero".to_string()]
+        );
     }
 }
