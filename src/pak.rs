@@ -8,7 +8,7 @@ use std::{
 use unreal_asset::{
     Asset,
     engine_version::EngineVersion,
-    exports::{ExportBaseTrait, ExportNormalTrait, base_export::BaseExport},
+    exports::{Export, ExportBaseTrait, ExportNormalTrait, base_export::BaseExport},
     properties::{Property, PropertyDataTrait},
 };
 
@@ -65,6 +65,7 @@ pub(crate) fn scan_pak_file(
             uasset,
             uexp,
             candidate.kinds.contains(&CatalogAssetKind::Item),
+            candidate.kinds.contains(&CatalogAssetKind::PersonaText),
         )?;
         scan.items.extend(parsed.items);
         scan.mechs.extend(parsed.mechs);
@@ -77,7 +78,9 @@ pub(crate) fn scan_pak_file(
         }
         scan.traits.extend(parsed.traits);
         scan.pilot_assets.extend(parsed.pilot_assets);
+        scan.persona_text.extend(parsed.persona_text);
     }
+    pilot_catalog::resolve_persona_text(&mut scan.pilot_assets, &scan.persona_text);
 
     Ok(())
 }
@@ -90,6 +93,7 @@ struct ParsedCatalogAsset {
     stock_templates: Vec<stock_template::StockTemplateLoadout>,
     traits: Vec<trait_catalog::JjTrait>,
     pilot_assets: Vec<pilot_catalog::JjPilotAsset>,
+    persona_text: Vec<(String, String)>,
 }
 
 fn parse_catalog_asset(
@@ -97,6 +101,7 @@ fn parse_catalog_asset(
     uasset: Vec<u8>,
     uexp: Option<Vec<u8>>,
     collect_items: bool,
+    collect_persona_text: bool,
 ) -> Result<ParsedCatalogAsset, ScarabError> {
     let asset = Asset::new(
         Cursor::new(uasset),
@@ -110,6 +115,17 @@ fn parse_catalog_asset(
 
     let mut parsed = ParsedCatalogAsset::default();
     for export in &asset.asset_data.exports {
+        if let Export::StringTableExport(table) = export {
+            if collect_persona_text {
+                parsed.persona_text.extend(
+                    table
+                        .table
+                        .iter()
+                        .map(|(_, key, value)| (key.clone(), value.clone())),
+                );
+            }
+            continue;
+        }
         let base_export = export.get_base_export();
         let class_name = base_export
             .get_class_type_for_ancestry(&asset)
@@ -236,6 +252,10 @@ fn select_catalog_packages(
         // (UI, Audio); the registry class match is already precise for them.
         let allowed = if registry_candidate.kind == CatalogAssetKind::Pilot {
             path.to_ascii_lowercase().ends_with(".uasset")
+        } else if registry_candidate.kind == CatalogAssetKind::PersonaText {
+            // Only the persona string tables; other string tables are UI text.
+            let lower = path.to_ascii_lowercase();
+            lower.ends_with(".uasset") && lower.contains("persona")
         } else {
             is_registry_candidate_path(path)
         };

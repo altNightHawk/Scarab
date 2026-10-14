@@ -199,7 +199,12 @@ dialogue voices (`MWDialogueVoiceAsset`). In JSON it has `personas`,
 `pilot_catalog` is optional so older catalog folders still load; note that the
 base-game pak is not rescanned in that mode, so run a full scan (no
 `--catalog-input-dir`, `--exclude-mods`) once to produce the base-game pilot
-catalog. Set `SCARAB_PILOT_DUMP=<file>` to write the raw properties of the
+catalog. Persona names and bios that the game stores as string-table keys
+(`Persona_Character_LyanaMoore_FullName`) are replaced with the table text when
+the persona string tables are in the scanned pak. With `--build-report`,
+`unscanned_paks` lists any other `.pak` files found in the game install
+(outside `Mods`) that were not scanned, so DLC delivered as a separate pak is
+not silently ignored. Set `SCARAB_PILOT_DUMP=<file>` to write the raw properties of the
 first few pilot assets of each kind (plus any named in the comma-separated
 `SCARAB_PILOT_DUMP_NAMES`), for checking extraction against game data.
 

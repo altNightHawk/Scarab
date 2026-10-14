@@ -27,7 +27,7 @@ pub use scanner::{ItemCategory, JjItem, JjMech};
 pub use stock_template::JjStockTemplate;
 pub use trait_catalog::{JjTrait, TraitCategory};
 
-pub const REPORT_SCHEMA_VERSION: u32 = 7;
+pub const REPORT_SCHEMA_VERSION: u32 = 8;
 
 #[derive(Debug, Error)]
 pub enum ScarabError {
@@ -112,6 +112,7 @@ struct BuildOptions {
     catalog_input_dir: Option<PathBuf>,
     pak_paths: Vec<PathBuf>,
     mods_dir: Option<PathBuf>,
+    unscanned_paks: Vec<String>,
     excluded_mod_folders: Vec<String>,
     output_dir: PathBuf,
     catalog_output_format: CatalogOutputFormat,
@@ -144,6 +145,9 @@ pub enum CatalogOutputFormat {
 pub struct CatalogBuildReport {
     pub schema_version: u32,
     pub inputs: Vec<String>,
+    /// Other `.pak` files found in the game install (outside the Mods folders)
+    /// that were not scanned. Empty when the base pak holds all DLC content.
+    pub unscanned_paks: Vec<String>,
     pub files_scanned: usize,
     pub items_emitted: usize,
     pub weapons_emitted: usize,
@@ -358,6 +362,8 @@ struct ScanAccumulator {
     stock_templates: Vec<stock_template::StockTemplateLoadout>,
     traits: Vec<JjTrait>,
     pilot_assets: Vec<JjPilotAsset>,
+    /// Persona string-table entries (key -> text), used to resolve name keys.
+    persona_text: BTreeMap<String, String>,
 }
 
 fn build_catalog_files(options: BuildOptions) -> Result<CatalogBuildReport, ScarabError> {
@@ -496,6 +502,7 @@ fn build_catalog_files(options: BuildOptions) -> Result<CatalogBuildReport, Scar
     let report = CatalogBuildReport {
         schema_version: REPORT_SCHEMA_VERSION,
         inputs: report_inputs(&options),
+        unscanned_paks: options.unscanned_paks.clone(),
         files_scanned,
         items_emitted: items.len(),
         weapons_emitted: weapons,
@@ -559,10 +566,12 @@ pub fn build_jj_catalogs(options: JjBuildOptions) -> Result<CatalogBuildReport, 
     if options.catalog_input_dir.is_none() && pak_paths.is_empty() && mods_dir.is_none() {
         return Err(ScarabError::NoCatalogSources);
     }
+    let unscanned_paks = find_unscanned_paks(&options.mw5_dir, &pak_paths);
     build_catalog_files(BuildOptions {
         catalog_input_dir: options.catalog_input_dir,
         pak_paths,
         mods_dir,
+        unscanned_paks,
         excluded_mod_folders: options.excluded_mod_folders,
         output_dir: options.output_dir,
         catalog_output_format: options.catalog_output_format,
@@ -589,6 +598,41 @@ fn find_base_game_pak(mw5_dir: &Path) -> Result<PathBuf, ScarabError> {
         .ok_or_else(|| ScarabError::MissingBaseGamePak {
             path: mw5_dir.to_path_buf(),
         })
+}
+
+/// `.pak` files in the game install that this run does not scan. MW5 ships DLC
+/// content in the base pak; listing anything else makes a DLC delivered as a
+/// separate pak visible instead of silently ignored. Mods are scanned through
+/// their own mod folders, so any `Mods` folder is skipped here.
+fn find_unscanned_paks(mw5_dir: &Path, scanned: &[PathBuf]) -> Vec<String> {
+    const MAX_DEPTH: usize = 6;
+    let scanned = scanned
+        .iter()
+        .map(|path| path.to_string_lossy().to_ascii_lowercase())
+        .collect::<BTreeSet<_>>();
+    let mut found = Vec::new();
+    let mut pending = vec![(mw5_dir.to_path_buf(), 0usize)];
+    while let Some((dir, depth)) = pending.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+            if path.is_dir() {
+                if depth < MAX_DEPTH && name != "mods" {
+                    pending.push((path, depth + 1));
+                }
+            } else if name.ends_with(".pak")
+                && !scanned.contains(&path.to_string_lossy().to_ascii_lowercase())
+            {
+                let relative = path.strip_prefix(mw5_dir).unwrap_or(&path);
+                found.push(relative.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+    found.sort();
+    found
 }
 
 fn find_mods_folder(mw5_dir: &Path) -> Option<PathBuf> {
@@ -1993,4 +2037,29 @@ fn render_mech_catalog_json_with_hero_names(
 
 fn render_trait_catalog_json(traits: &[JjTrait]) -> String {
     python_export::render_trait_catalog_json(traits)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unscanned_paks_lists_other_paks_but_not_mods_or_the_scanned_pak() {
+        let root = std::env::temp_dir().join(format!("scarab-pak-test-{}", std::process::id()));
+        let paks = root.join("MW5Mercs").join("Content").join("Paks");
+        let mods = root.join("MW5Mercs").join("Mods").join("SomeMod");
+        fs::create_dir_all(&paks).unwrap();
+        fs::create_dir_all(&mods).unwrap();
+        let base = paks.join("MW5Mercs-WindowsNoEditor.pak");
+        fs::write(&base, b"").unwrap();
+        fs::write(paks.join("DLC10-WindowsNoEditor.pak"), b"").unwrap();
+        fs::write(mods.join("SomeMod.pak"), b"").unwrap();
+
+        let found = find_unscanned_paks(&root, std::slice::from_ref(&base));
+        fs::remove_dir_all(&root).unwrap();
+        assert_eq!(
+            found,
+            vec!["MW5Mercs/Content/Paks/DLC10-WindowsNoEditor.pak".to_string()]
+        );
+    }
 }

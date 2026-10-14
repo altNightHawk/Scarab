@@ -105,6 +105,32 @@ pub(crate) fn pilot_asset_from_unreal_export(
     })
 }
 
+/// Persona names and bios may be string-table entries, which the asset stores
+/// as the entry key (`Persona_Character_LyanaMoore_FullName`). Replace any such
+/// key with the table's text when the table was scanned.
+pub(crate) fn resolve_persona_text(
+    assets: &mut [JjPilotAsset],
+    text: &std::collections::BTreeMap<String, String>,
+) {
+    if text.is_empty() {
+        return;
+    }
+    let resolve = |field: &mut Option<String>| {
+        if let Some(resolved) = field.as_ref().and_then(|key| text.get(key))
+            && !resolved.trim().is_empty()
+        {
+            *field = Some(resolved.clone());
+        }
+    };
+    for asset in assets {
+        if let JjPilotAsset::Persona(persona) = asset {
+            resolve(&mut persona.callsign);
+            resolve(&mut persona.full_name);
+            resolve(&mut persona.bio);
+        }
+    }
+}
+
 /// Diagnostics: when `SCARAB_PILOT_DUMP=<file>` is set, append the raw
 /// properties of the first few exports of each pilot asset kind to that file,
 /// so catalog extraction can be checked against real game data. Exports named
@@ -284,6 +310,39 @@ mod tests {
                 attributes: Vec::new(),
             })
         );
+    }
+
+    #[test]
+    fn string_table_keys_resolve_to_text() {
+        let mut assets = vec![
+            JjPilotAsset::Persona(JjPersona {
+                asset_name: "Lyana".to_string(),
+                callsign: Some("Persona_Character_LyanaMoore_Callsign".to_string()),
+                full_name: Some("Persona_Character_LyanaMoore_FullName".to_string()),
+                bio: Some("Already readable text".to_string()),
+                portrait: None,
+                voice: None,
+                attributes: Vec::new(),
+            }),
+            JjPilotAsset::Portrait("Lyana".to_string()),
+        ];
+        let text = std::collections::BTreeMap::from([
+            (
+                "Persona_Character_LyanaMoore_FullName".to_string(),
+                "Lyana Moore".to_string(),
+            ),
+            (
+                "Persona_Character_LyanaMoore_Callsign".to_string(),
+                "Lyana".to_string(),
+            ),
+        ]);
+        resolve_persona_text(&mut assets, &text);
+        let JjPilotAsset::Persona(persona) = &assets[0] else {
+            panic!("expected a persona");
+        };
+        assert_eq!(persona.full_name.as_deref(), Some("Lyana Moore"));
+        assert_eq!(persona.callsign.as_deref(), Some("Lyana"));
+        assert_eq!(persona.bio.as_deref(), Some("Already readable text"));
     }
 
     #[test]

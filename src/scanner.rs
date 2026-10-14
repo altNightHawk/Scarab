@@ -34,6 +34,8 @@ pub(crate) enum CatalogAssetKind {
     Loadout,
     Trait,
     Pilot,
+    /// Persona string tables, which hold the real text behind persona name keys.
+    PersonaText,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -226,6 +228,8 @@ pub(crate) fn catalog_asset_kind_from_class(class_name: &str) -> Option<CatalogA
         Some(CatalogAssetKind::Trait)
     } else if pilot_catalog::pilot_asset_kind_from_class(&lower).is_some() {
         Some(CatalogAssetKind::Pilot)
+    } else if lower == "stringtable" {
+        Some(CatalogAssetKind::PersonaText)
     } else {
         None
     }
