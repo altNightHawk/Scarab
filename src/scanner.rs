@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::trait_catalog;
+use crate::{pilot_catalog, trait_catalog};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -33,6 +33,7 @@ pub(crate) enum CatalogAssetKind {
     Mech,
     Loadout,
     Trait,
+    Pilot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -223,6 +224,8 @@ pub(crate) fn catalog_asset_kind_from_class(class_name: &str) -> Option<CatalogA
         Some(CatalogAssetKind::Loadout)
     } else if trait_catalog::trait_category_from_class(&lower).is_some() {
         Some(CatalogAssetKind::Trait)
+    } else if pilot_catalog::pilot_asset_kind_from_class(&lower).is_some() {
+        Some(CatalogAssetKind::Pilot)
     } else {
         None
     }

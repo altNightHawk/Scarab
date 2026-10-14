@@ -13,7 +13,7 @@ use unreal_asset::{
 };
 
 use crate::{
-    ScanAccumulator, ScarabError, asset_registry,
+    ScanAccumulator, ScarabError, asset_registry, pilot_catalog,
     scanner::{self, CatalogAssetKind},
     stock_template, trait_catalog,
     unreal_name::render_fname,
@@ -76,6 +76,7 @@ pub(crate) fn scan_pak_file(
             scan.stock_templates.push(loadout);
         }
         scan.traits.extend(parsed.traits);
+        scan.pilot_assets.extend(parsed.pilot_assets);
     }
 
     Ok(())
@@ -88,6 +89,7 @@ struct ParsedCatalogAsset {
     stock_template_types: Vec<stock_template::StockTemplateTypes>,
     stock_templates: Vec<stock_template::StockTemplateLoadout>,
     traits: Vec<trait_catalog::JjTrait>,
+    pilot_assets: Vec<pilot_catalog::JjPilotAsset>,
 }
 
 fn parse_catalog_asset(
@@ -166,6 +168,12 @@ fn parse_catalog_asset(
             &normal_export.properties,
         ) {
             parsed.traits.push(catalog_trait);
+        } else if let Some(pilot_asset) = pilot_catalog::pilot_asset_from_unreal_export(
+            &class_name,
+            &asset_name,
+            &normal_export.properties,
+        ) {
+            parsed.pilot_assets.push(pilot_asset);
         }
     }
     Ok(parsed)
@@ -224,7 +232,14 @@ fn select_catalog_packages(
         let Some(path) = index.resolve_registry_package(&registry_candidate.package_name) else {
             continue;
         };
-        if !is_registry_candidate_path(path) {
+        // Portraits and voices live under folders the item/mech filters skip
+        // (UI, Audio); the registry class match is already precise for them.
+        let allowed = if registry_candidate.kind == CatalogAssetKind::Pilot {
+            path.to_ascii_lowercase().ends_with(".uasset")
+        } else {
+            is_registry_candidate_path(path)
+        };
+        if !allowed {
             continue;
         }
         selected
