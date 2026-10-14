@@ -168,26 +168,45 @@ The default `json-gz` format generates:
 item_catalog.json.gz
 mech_catalog.json.gz
 trait_catalog.json.gz
+pilot_catalog.json.gz
 stock_templates.json.gz
 ```
 
 Scarab always generates the complete catalog set.
 
-With `--catalog-format json`, the item, mech, and trait files become:
+With `--catalog-format json`, the item, mech, trait, and pilot files become:
 
 ```text
 item_catalog.json
 mech_catalog.json
 trait_catalog.json
+pilot_catalog.json
 ```
 
-With `--catalog-format python`, those three files become:
+With `--catalog-format python`, those four files become:
 
 ```text
 item_catalog.py
 mech_catalog.py
 trait_catalog.py
+pilot_catalog.py
 ```
+
+`pilot_catalog` lists pilot personas (`MWPersonaAsset`: callsign, full name,
+bio (up to three sentences: `bio`, `bio1`, `bio2`), portrait, voice, gameplay tags), portraits (`MWPortraitAsset`), and
+dialogue voices (`MWDialogueVoiceAsset`). In JSON it has `personas`,
+`portraits`, and `voices` sections. When `--catalog-input-dir` is used,
+`pilot_catalog` is optional so older catalog folders still load; note that the
+base-game pak is not rescanned in that mode, so run a full scan (no
+`--catalog-input-dir`, `--exclude-mods`) once to produce the base-game pilot
+catalog. Persona names and bios that the game stores as string-table keys
+(`Persona_Character_LyanaMoore_FullName`) are replaced with the table text when
+the persona string tables are in the scanned pak. With `--build-report`,
+`unscanned_paks` lists any other `.pak` files found in the game install
+(outside `Mods`) that were not scanned, so DLC delivered as a separate pak is
+not silently ignored. Set `SCARAB_PILOT_DUMP=<file>` to write the raw properties of the
+first few pilot assets of each kind (plus any named in the comma-separated
+`SCARAB_PILOT_DUMP_NAMES`), for checking extraction against game data.
 
 `stock_templates.json.gz` remains compressed JSON in every format. Stock
 templates retain their factory armor allocation and separately include
@@ -214,7 +233,7 @@ trait_catalog.json.gz
 stock_templates.json.gz
 ```
 
-For item, mech, and trait catalogs, Scarab also accepts the matching plain
+`pilot_catalog.json.gz` (or `.json`) is read when present. For item, mech, and trait catalogs, Scarab also accepts the matching plain
 `.json` file when the preferred `.json.gz` file is absent.
 `stock_templates.json.gz` is always required.
 
