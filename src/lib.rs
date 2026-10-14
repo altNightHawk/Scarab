@@ -15,17 +15,19 @@ use thiserror::Error;
 mod asset_registry;
 mod compatibility;
 mod pak;
+mod pilot_catalog;
 mod python_export;
 mod scanner;
 mod stock_template;
 mod trait_catalog;
 mod unreal_name;
 
+pub use pilot_catalog::{JjPersona, JjPilotAsset};
 pub use scanner::{ItemCategory, JjItem, JjMech};
 pub use stock_template::JjStockTemplate;
 pub use trait_catalog::{JjTrait, TraitCategory};
 
-pub const REPORT_SCHEMA_VERSION: u32 = 6;
+pub const REPORT_SCHEMA_VERSION: u32 = 7;
 
 #[derive(Debug, Error)]
 pub enum ScarabError {
@@ -154,6 +156,9 @@ pub struct CatalogBuildReport {
     pub traits_emitted: usize,
     pub pilot_traits_emitted: usize,
     pub mech_traits_emitted: usize,
+    pub pilot_personas_emitted: usize,
+    pub pilot_portraits_emitted: usize,
+    pub pilot_voices_emitted: usize,
     pub duplicate_mda_stock_templates: BTreeMap<String, DuplicateStockTemplateReport>,
     pub template_only_stock_templates: Vec<TemplateOnlyStockTemplateReport>,
     pub skipped_mod_compatibility: Vec<SkippedModCompatibilityReport>,
@@ -189,6 +194,7 @@ pub struct CatalogSourceReport {
     pub stock_loadouts_scanned: usize,
     pub stock_templates_emitted: usize,
     pub traits_scanned: usize,
+    pub pilot_assets_scanned: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -252,6 +258,7 @@ struct SourceCatalog {
     stock_template_types: Vec<SourcedStockTemplateTypes>,
     stock_templates: Vec<SourcedStockTemplate>,
     traits: Vec<SourcedValue<JjTrait>>,
+    pilot_assets: Vec<SourcedValue<JjPilotAsset>>,
     stock_loadouts_scanned: usize,
     stock_templates_emitted: usize,
     duplicate_mda_stock_templates: BTreeMap<String, DuplicateStockTemplateReport>,
@@ -337,6 +344,7 @@ pub struct BuildOutputs {
     pub mech_catalog: String,
     pub stock_templates_json_gz: String,
     pub trait_catalog: String,
+    pub pilot_catalog: String,
     pub catalog_build_report_json: Option<String>,
 }
 
@@ -349,6 +357,7 @@ struct ScanAccumulator {
     stock_template_types: BTreeMap<String, stock_template::StockTemplateTypes>,
     stock_templates: Vec<stock_template::StockTemplateLoadout>,
     traits: Vec<JjTrait>,
+    pilot_assets: Vec<JjPilotAsset>,
 }
 
 fn build_catalog_files(options: BuildOptions) -> Result<CatalogBuildReport, ScarabError> {
@@ -383,6 +392,7 @@ fn build_catalog_files(options: BuildOptions) -> Result<CatalogBuildReport, Scar
         hero_name_overrides,
         stock_templates,
         traits,
+        pilot_assets,
         report: merge_report,
     } = merge_source_catalogs(&source_catalogs);
 
@@ -429,6 +439,17 @@ fn build_catalog_files(options: BuildOptions) -> Result<CatalogBuildReport, Scar
         options.catalog_output_format,
     )?;
 
+    let pilot_catalog = options.output_dir.join(catalog_output_file_name(
+        "pilot_catalog",
+        options.catalog_output_format,
+    ));
+    write_catalog_output(
+        &pilot_catalog,
+        python_export::render_pilot_catalog_json(&pilot_assets),
+        || python_export::render_pilot_catalog_py(&pilot_assets),
+        options.catalog_output_format,
+    )?;
+
     let weapons = items
         .iter()
         .filter(|item| item.category == ItemCategory::Weapon)
@@ -454,6 +475,15 @@ fn build_catalog_files(options: BuildOptions) -> Result<CatalogBuildReport, Scar
         .iter()
         .filter(|catalog_trait| catalog_trait.category == TraitCategory::Mech)
         .count();
+    let count_pilot_assets = |kind: pilot_catalog::PilotAssetKind| {
+        pilot_assets
+            .iter()
+            .filter(|asset| asset.kind() == kind)
+            .count()
+    };
+    let pilot_personas = count_pilot_assets(pilot_catalog::PilotAssetKind::Persona);
+    let pilot_portraits = count_pilot_assets(pilot_catalog::PilotAssetKind::Portrait);
+    let pilot_voices = count_pilot_assets(pilot_catalog::PilotAssetKind::Voice);
     let stock_loadouts_scanned = source_reports
         .iter()
         .map(|source| source.stock_loadouts_scanned)
@@ -478,6 +508,9 @@ fn build_catalog_files(options: BuildOptions) -> Result<CatalogBuildReport, Scar
         traits_emitted: traits.len(),
         pilot_traits_emitted: pilot_traits,
         mech_traits_emitted: mech_traits,
+        pilot_personas_emitted: pilot_personas,
+        pilot_portraits_emitted: pilot_portraits,
+        pilot_voices_emitted: pilot_voices,
         duplicate_mda_stock_templates,
         template_only_stock_templates: merge_report.template_only_stock_templates,
         skipped_mod_compatibility,
@@ -488,6 +521,7 @@ fn build_catalog_files(options: BuildOptions) -> Result<CatalogBuildReport, Scar
             mech_catalog: mech_catalog.display().to_string(),
             stock_templates_json_gz: stock_templates_json_gz.display().to_string(),
             trait_catalog: trait_catalog.display().to_string(),
+            pilot_catalog: pilot_catalog.display().to_string(),
             catalog_build_report_json: options
                 .build_report
                 .then(|| report_path.display().to_string()),
@@ -592,6 +626,7 @@ struct MergedCatalog {
     hero_name_overrides: BTreeMap<String, String>,
     stock_templates: BTreeMap<String, JjStockTemplate>,
     traits: Vec<JjTrait>,
+    pilot_assets: Vec<JjPilotAsset>,
     report: MergeReport,
 }
 
@@ -651,6 +686,10 @@ fn load_catalog_bundle_source(catalog_input_dir: &Path) -> Result<CatalogSource,
     scan.mechs = mech_catalog.mechs;
     scan.hero_name_overrides = mech_catalog.hero_name_overrides;
     scan.traits = read_trait_catalog_file(&trait_path)?;
+    // Optional: catalog folders from before pilot catalogs existed still load.
+    if let Some(pilot_path) = optional_catalog_input_file(catalog_input_dir, "pilot_catalog") {
+        scan.pilot_assets = read_pilot_catalog_file(&pilot_path)?;
+    }
     for (key, template) in read_stock_template_catalog_file(&stock_templates_path)? {
         scan.stock_template_types.insert(
             key.clone(),
@@ -803,6 +842,12 @@ fn finalize_source_catalog_with_processors(
         left.category == right.category && left.asset_name.eq_ignore_ascii_case(&right.asset_name)
     });
 
+    source.scan.pilot_assets.sort();
+    source
+        .scan
+        .pilot_assets
+        .dedup_by(|left, right| left.key() == right.key());
+
     let (source_compatibility, compatibility_skip) = if let Some(mod_identity) =
         &source.mod_identity
     {
@@ -942,6 +987,15 @@ fn finalize_source_catalog_with_processors(
                 source: identity.clone(),
             })
             .collect(),
+        pilot_assets: source
+            .scan
+            .pilot_assets
+            .into_iter()
+            .map(|value| SourcedValue {
+                value,
+                source: identity.clone(),
+            })
+            .collect(),
         stock_loadouts_scanned,
         stock_templates_emitted: included_loadout_by_key.len(),
         duplicate_mda_stock_templates: duplicate_stock_template_report(
@@ -984,6 +1038,15 @@ fn merge_source_catalogs(sources: &[SourceCatalog]) -> MergedCatalog {
         "trait",
         &mut report,
     );
+    let pilot_assets = merge_sourced_values(
+        sources
+            .iter()
+            .flat_map(|source| source.pilot_assets.iter().cloned()),
+        JjPilotAsset::key,
+        |asset| asset.asset_name().to_string(),
+        "pilot asset",
+        &mut report,
+    );
     let stock_templates = merge_stock_templates(sources, &mechs, &mech_sources, &mut report);
 
     MergedCatalog {
@@ -992,6 +1055,7 @@ fn merge_source_catalogs(sources: &[SourceCatalog]) -> MergedCatalog {
         hero_name_overrides,
         stock_templates,
         traits,
+        pilot_assets,
         report,
     }
 }
@@ -1218,6 +1282,7 @@ impl SourceCatalog {
             stock_loadouts_scanned: self.stock_loadouts_scanned,
             stock_templates_emitted: self.stock_templates_emitted,
             traits_scanned: self.traits.len(),
+            pilot_assets_scanned: self.pilot_assets.len(),
         }
     }
 
@@ -1457,6 +1522,19 @@ fn read_mech_catalog_file(path: &Path) -> Result<LoadedMechCatalog, ScarabError>
     })
 }
 
+fn read_pilot_catalog_file(path: &Path) -> Result<Vec<JjPilotAsset>, ScarabError> {
+    let assets = read_typed_json_or_gz_file::<pilot_catalog::PilotCatalogJson>(path)?.into_assets();
+    for asset in &assets {
+        if asset.asset_name().trim().is_empty() {
+            return Err(ScarabError::InvalidCatalogInput {
+                path: path.to_path_buf(),
+                reason: "pilot catalog asset name must not be empty".to_string(),
+            });
+        }
+    }
+    Ok(assets)
+}
+
 fn read_trait_catalog_file(path: &Path) -> Result<Vec<JjTrait>, ScarabError> {
     let catalog = read_typed_json_or_gz_file::<TraitCatalogJson>(path)?;
     let mut traits = Vec::new();
@@ -1523,6 +1601,13 @@ fn canonical_catalog_input_file(
         return Ok(compressed);
     }
     required_catalog_input_file(catalog_input_dir, &format!("{stem}.json"))
+}
+
+fn optional_catalog_input_file(catalog_input_dir: &Path, stem: &str) -> Option<PathBuf> {
+    [format!("{stem}.json.gz"), format!("{stem}.json")]
+        .into_iter()
+        .map(|name| catalog_input_dir.join(name))
+        .find(|path| path.is_file())
 }
 
 fn required_catalog_input_file(

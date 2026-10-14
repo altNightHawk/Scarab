@@ -96,6 +96,13 @@ fn main() {
                 "wrote {} traits to {}",
                 report.traits_emitted, report.outputs.trait_catalog
             );
+            println!(
+                "wrote {} pilot personas, {} portraits, {} voices to {}",
+                report.pilot_personas_emitted,
+                report.pilot_portraits_emitted,
+                report.pilot_voices_emitted,
+                report.outputs.pilot_catalog
+            );
             if let Some(report_path) = report.outputs.catalog_build_report_json {
                 println!("report: {report_path}");
             }

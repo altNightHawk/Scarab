@@ -116,7 +116,7 @@ fn label_property_by_labelish_name(property: &Property) -> Option<String> {
     }
 }
 
-fn string_from_property(property: &Property) -> Option<String> {
+pub(crate) fn string_from_property(property: &Property) -> Option<String> {
     match property {
         Property::TextProperty(property) => property
             .culture_invariant_string
