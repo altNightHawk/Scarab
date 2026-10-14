@@ -200,7 +200,8 @@ dialogue voices (`MWDialogueVoiceAsset`). In JSON it has `personas`,
 base-game pak is not rescanned in that mode, so run a full scan (no
 `--catalog-input-dir`, `--exclude-mods`) once to produce the base-game pilot
 catalog. Set `SCARAB_PILOT_DUMP=<file>` to write the raw properties of the
-first few pilot assets of each kind, for checking extraction against game data.
+first few pilot assets of each kind (plus any named in the comma-separated
+`SCARAB_PILOT_DUMP_NAMES`), for checking extraction against game data.
 
 `stock_templates.json.gz` remains compressed JSON in every format. Stock
 templates retain their factory armor allocation and separately include

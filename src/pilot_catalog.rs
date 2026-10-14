@@ -107,7 +107,8 @@ pub(crate) fn pilot_asset_from_unreal_export(
 
 /// Diagnostics: when `SCARAB_PILOT_DUMP=<file>` is set, append the raw
 /// properties of the first few exports of each pilot asset kind to that file,
-/// so catalog extraction can be checked against real game data.
+/// so catalog extraction can be checked against real game data. Exports named
+/// in `SCARAB_PILOT_DUMP_NAMES` (comma separated) are always dumped too.
 fn dump_for_diagnostics(
     kind: PilotAssetKind,
     class_name: &str,
@@ -127,7 +128,12 @@ fn dump_for_diagnostics(
     let Some(path) = std::env::var_os("SCARAB_PILOT_DUMP") else {
         return;
     };
-    if COUNTS[kind as usize].fetch_add(1, Ordering::Relaxed) >= LIMIT {
+    let named = std::env::var("SCARAB_PILOT_DUMP_NAMES").is_ok_and(|names| {
+        names
+            .split(',')
+            .any(|name| name.trim().eq_ignore_ascii_case(asset_name))
+    });
+    if COUNTS[kind as usize].fetch_add(1, Ordering::Relaxed) >= LIMIT && !named {
         return;
     }
     if let Ok(mut file) = std::fs::OpenOptions::new()
