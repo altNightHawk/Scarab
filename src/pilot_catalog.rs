@@ -26,6 +26,11 @@ pub struct JjPersona {
     pub full_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bio: Option<String>,
+    /// Generated pilots split their bio into up to three sentences.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bio1: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bio2: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub portrait: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -98,6 +103,8 @@ pub(crate) fn pilot_asset_from_unreal_export(
             callsign: text_by_name(properties, "Callsign"),
             full_name: text_by_name(properties, "FullName"),
             bio: text_by_name(properties, "Bio"),
+            bio1: text_by_name(properties, "Bio1"),
+            bio2: text_by_name(properties, "Bio2"),
             portrait: primary_asset_name(properties, "PortraitAssetId"),
             voice: primary_asset_name(properties, "DialogueVoiceAssetId"),
             attributes: tags_by_name(properties, "Attributes"),
@@ -127,6 +134,8 @@ pub(crate) fn resolve_persona_text(
             resolve(&mut persona.callsign);
             resolve(&mut persona.full_name);
             resolve(&mut persona.bio);
+            resolve(&mut persona.bio1);
+            resolve(&mut persona.bio2);
         }
     }
 }
@@ -305,6 +314,8 @@ mod tests {
                 callsign: None,
                 full_name: None,
                 bio: None,
+                bio1: None,
+                bio2: None,
                 portrait: None,
                 voice: None,
                 attributes: Vec::new(),
@@ -320,6 +331,8 @@ mod tests {
                 callsign: Some("Persona_Character_LyanaMoore_Callsign".to_string()),
                 full_name: Some("Persona_Character_LyanaMoore_FullName".to_string()),
                 bio: Some("Already readable text".to_string()),
+                bio1: Some("Bio_Key_1".to_string()),
+                bio2: None,
                 portrait: None,
                 voice: None,
                 attributes: Vec::new(),
@@ -335,6 +348,7 @@ mod tests {
                 "Persona_Character_LyanaMoore_Callsign".to_string(),
                 "Lyana".to_string(),
             ),
+            ("Bio_Key_1".to_string(), "Second sentence.".to_string()),
         ]);
         resolve_persona_text(&mut assets, &text);
         let JjPilotAsset::Persona(persona) = &assets[0] else {
@@ -343,6 +357,7 @@ mod tests {
         assert_eq!(persona.full_name.as_deref(), Some("Lyana Moore"));
         assert_eq!(persona.callsign.as_deref(), Some("Lyana"));
         assert_eq!(persona.bio.as_deref(), Some("Already readable text"));
+        assert_eq!(persona.bio1.as_deref(), Some("Second sentence."));
     }
 
     #[test]

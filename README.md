@@ -193,7 +193,7 @@ pilot_catalog.py
 ```
 
 `pilot_catalog` lists pilot personas (`MWPersonaAsset`: callsign, full name,
-bio, portrait, voice, gameplay tags), portraits (`MWPortraitAsset`), and
+bio (up to three sentences: `bio`, `bio1`, `bio2`), portrait, voice, gameplay tags), portraits (`MWPortraitAsset`), and
 dialogue voices (`MWDialogueVoiceAsset`). In JSON it has `personas`,
 `portraits`, and `voices` sections. When `--catalog-input-dir` is used,
 `pilot_catalog` is optional so older catalog folders still load; note that the
